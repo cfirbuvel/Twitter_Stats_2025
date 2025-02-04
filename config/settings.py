@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, ValidationError
+import sys
 
 class Settings(BaseSettings):
     TG_API_ID: int = Field(..., env="TG_API_ID")
@@ -12,4 +13,8 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
 
-settings = Settings()
+try:
+    settings = Settings()
+except ValidationError as e:
+    print("❌ Missing or invalid environment variables:", e)
+    sys.exit(1)
