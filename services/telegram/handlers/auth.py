@@ -1,19 +1,38 @@
+from functools import wraps
 from telegram import Update
-from telegram.ext import ContextTypes, MessageHandler, filters
-from config.settings import Settings
+from telegram.ext import ContextTypes
+from models.redis_client import RedisManager
+import hashlib
 
-settings = Settings()
+
+def rate_limit(key: str, limit: int = 5):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            redis = await RedisManager.get_client()
+            user_id = update.effective_user.id
+            count = await redis.incr(f"rate_limit:{key}:{user_id}")
+
+            if count > limit:
+                await update.message.reply_text("⚠️ Too many requests. Please try again later.")
+                return
+
+            return await func(update, context)
+
+        return wrapper
+
+    return decorator
 
 
-async def authenticate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+@rate_limit("auth")
+async def auth_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip()
+    stored_hash = hashlib.sha256(settings.BOT_PASSWORD.get_secret_value().encode()).hexdigest()
+    user_hash = hashlib.sha256(user_input.encode()).hexdigest()
 
-    if user_input == settings.BOT_PASSWORD.get_secret_value():
+    if user_hash == stored_hash:
         await update.message.reply_text("✅ Authentication successful!")
         return "AUTHENTICATED"
-    else:
-        await update.message.reply_text("❌ Incorrect password. Try again or /cancel")
-        return "AWAITING_PASSWORD"
 
-
-auth_handler = MessageHandler(filters.TEXT & ~filters.COMMAND, authenticate)
+    await update.message.reply_text("❌ Invalid credentials. Try again.")
+    return "AUTH_FAILED"

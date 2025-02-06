@@ -1,41 +1,40 @@
-from collections import defaultdict
 from datetime import datetime
+from typing import Dict, List
+from collections import defaultdict
+from models.redis_client import RedisManager
 
 
 class MentionAnalyzer:
-    def __init__(self, raw_data):
+    def __init__(self, raw_data: dict):
         self.raw_data = raw_data
-        self.mentions = defaultdict(self._create_mention_entry)
+        self.mentions = defaultdict(self._new_mention_entry)
 
-    def analyze(self, min_mentions=1, max_results=50):
-        """Process mentions with filtering and sorting"""
-        self._process_raw_data()
-        filtered = self._filter_mentions(min_ments)
+    async def analyze(self, min_mentions: int = 1, max_results: int = 50) -> List[Dict]:
+        await self._process_data()
+        filtered = self._filter(min_mentions)
         return self._sort_and_limit(filtered, max_results)
 
-    def _create_mention_entry(self):
-        return {"count": 0, "first": None, "last": None, "example": None}
+    def _new_mention_entry(self) -> dict:
+        return {
+            "count": 0,
+            "first_seen": None,
+            "last_seen": None,
+            "example_tweet": None
+        }
 
-    def _process_raw_data(self):
+    async def _process_data(self):
         for tweet in self.raw_data.get("data", []):
             created_at = datetime.fromisoformat(tweet["created_at"].rstrip("Z"))
             for mention in tweet.get("entities", {}).get("mentions", []):
-                self._update_mention_entry(mention["username"], created_at, tweet["id"])
+                await self._update_mention(mention["username"], created_at, tweet["id"])
 
-    def _update_mention_entry(self, username, timestamp, tweet_id):
+    async def _update_mention(self, username: str, timestamp: datetime, tweet_id: str):
         entry = self.mentions[username]
         entry["count"] += 1
-        if not entry["first"] or timestamp < entry["first"]:
-            entry["first"] = timestamp
-        if not entry["last"] or timestamp > entry["last"]:
-            entry["last"] = timestamp
-            entry["example"] = f"https://twitter.com/i/status/{tweet_id}"
 
-    def _filter_mentions(self, min_mentions):
-        return {k: v for k, v in self.mentions.items() if v["count"] >= min_ments}
+        if not entry["first_seen"] or timestamp < entry["first_seen"]:
+            entry["first_seen"] = timestamp
 
-    @staticmethod
-    def _sort_and_limit(mentions, max_results):
-        return sorted(mentions.items(),
-                      key=lambda x: x[1]["count"],
-                      reverse=True)[:max_results]
+        if not entry["last_seen"] or timestamp > entry["last_seen"]:
+            entry["last_seen"] = timestamp
+            entry["example_tweet"] = f"https://twitter.com/i/status/{tweet_id}"
